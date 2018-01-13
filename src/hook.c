@@ -61,6 +61,7 @@
 typedef struct _HOOK_ENTRY
 {
     LPVOID pTarget;             // Address of the target function.
+    LPVOID pTargetView;         // Address of the target function in the mapped view.
     LPVOID pDetour;             // Address of the detour or relay function.
     LPVOID pTrampoline;         // Address of the trampoline function.
     UINT8  backup[8];           // Original prologue of the target function.
@@ -354,25 +355,26 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
     DWORD  oldProtect;
     SIZE_T patchSize    = sizeof(JMP_REL);
     LPBYTE pPatchTarget = (LPBYTE)pHook->pTarget;
+    LPBYTE pPatchTargetView = (LPBYTE)pHook->pTargetView;
 
     if (pHook->patchAbove)
     {
-        pPatchTarget -= sizeof(JMP_REL);
+        pPatchTargetView -= sizeof(JMP_REL);
         patchSize    += sizeof(JMP_REL_SHORT);
     }
 
-    if (!VirtualProtect(pPatchTarget, patchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+    if (!VirtualProtect(pPatchTargetView, patchSize, PAGE_EXECUTE_READWRITE, &oldProtect)) {
         return MH_ERROR_MEMORY_PROTECT;
-
+    }
     if (enable)
     {
-        PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
+        PJMP_REL pJmp = (PJMP_REL)pPatchTargetView;
         pJmp->opcode = 0xE9;
         pJmp->operand = (UINT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
 
         if (pHook->patchAbove)
         {
-            PJMP_REL_SHORT pShortJmp = (PJMP_REL_SHORT)pHook->pTarget;
+            PJMP_REL_SHORT pShortJmp = (PJMP_REL_SHORT)pHook->pTargetView;
             pShortJmp->opcode = 0xEB;
             pShortJmp->operand = (UINT8)(0 - (sizeof(JMP_REL_SHORT) + sizeof(JMP_REL)));
         }
@@ -380,15 +382,16 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
     else
     {
         if (pHook->patchAbove)
-            memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL) + sizeof(JMP_REL_SHORT));
+            memcpy(pPatchTargetView, pHook->backup, sizeof(JMP_REL) + sizeof(JMP_REL_SHORT));
         else
-            memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL));
+            memcpy(pPatchTargetView, pHook->backup, sizeof(JMP_REL));
     }
 
-    VirtualProtect(pPatchTarget, patchSize, oldProtect, &oldProtect);
+    VirtualProtect(pPatchTargetView, patchSize, oldProtect, &oldProtect);
 
     // Just-in-case measure.
     FlushInstructionCache(GetCurrentProcess(), pPatchTarget, patchSize);
+    FlushInstructionCache(GetCurrentProcess(), pPatchTargetView, patchSize);
 
     pHook->isEnabled   = enable;
     pHook->queueEnable = enable;
@@ -534,6 +537,12 @@ MH_STATUS WINAPI MH_Uninitialize(VOID)
 //-------------------------------------------------------------------------
 MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOriginal)
 {
+    return MH_CreateHookWithView(pTarget, pTarget, pDetour, ppOriginal);
+}
+
+//-------------------------------------------------------------------------
+MH_STATUS WINAPI MH_CreateHookWithView(LPVOID pTarget, LPVOID pTargetView, LPVOID pDetour, LPVOID *ppOriginal)
+{
     MH_STATUS status = MH_OK;
 
     EnterSpinLock();
@@ -559,6 +568,7 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                         if (pHook != NULL)
                         {
                             pHook->pTarget     = ct.pTarget;
+                            pHook->pTargetView = pTargetView;
 #if defined(_M_X64) || defined(__x86_64__)
                             pHook->pDetour     = ct.pRelay;
 #else

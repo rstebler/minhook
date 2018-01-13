@@ -1,4 +1,4 @@
-/*
+﻿/*
  *  MinHook - The Minimalistic API Hooking Library for x64/x86
  *  Copyright (C) 2009-2017 Tsuda Kageyu.
  *  All rights reserved.
@@ -109,6 +109,19 @@ extern "C" {
     //                    used to call the original target function.
     //                    This parameter can be NULL.
     MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOriginal);
+
+    // Creates a Hook for the specified target function, in disabled state.
+    // Parameters:
+    //   pTarget     [in]  A pointer to the target function, which will be
+    //                     overridden by the detour function.
+    //   pTargetView [in]  A pointer to the writable view of the target function,
+    //                     which will be overridden by the detour function.
+    //   pDetour     [in]  A pointer to the detour function, which will override
+    //                     the target function.
+    //   ppOriginal  [out] A pointer to the trampoline function, which will be
+    //                     used to call the original target function.
+    //                     This parameter can be NULL.
+    MH_STATUS WINAPI MH_CreateHookWithView(LPVOID pTarget, LPVOID pTargetView, LPVOID pDetour, LPVOID *ppOriginal);
 
     // Creates a Hook for the specified API function, in disabled state.
     // Parameters:
